@@ -7,15 +7,15 @@
 set -euo pipefail
 
 # ---- Workdir (only writable area) -------------------------------------------
-export WORKDIR=/media/share/workdir/1610305236/lncProt
+export WORKDIR=/path/to/lncProt
 export DATA=$WORKDIR/data
 export RESULTS=$WORKDIR/results
 export LOGS=$WORKDIR/logs
 export FIGS=$WORKDIR/figures
 
 # ---- Read-only reference / database roots ------------------------------------
-export REF=/media/share/resource/reference
-export DB=/media/share/resource/database
+export REF=/path/to/reference
+export DB=/path/to/database
 export ANNO=$REF/homo_sapiens/GRCh38/annotation
 export GENOME=$REF/homo_sapiens/GRCh38/genome/GRCh38.CHR.fa
 export GENCODE=$ANNO/gencode.v46.annotation.gtf
@@ -31,11 +31,11 @@ export HOCOMOCO_LOCAL=$DB/MotifDB/HUMAN/HOCOMOCOv11_core_HUMAN_mono_meme_format.
 export JASPAR_LOCAL=$DB/JASPAR/JASPAR2024_CORE_non-redundant_pfms_meme.txt
 
 # ---- Compute: python + singularity containers --------------------------------
-# NOTE: containers live under /media/share/resource/container (NOT under $REF)
-export PY=/media/share/home/1610305236/.local/share/mamba/envs/Jupyter/bin/python
-export SIF_BEDTOOLS=/media/share/resource/container/bedtools/bedtools-2.30.0.sif
-export SIF_MEME=/media/share/resource/container/meme/meme-5.4.1.sif
-export SIF_PYBIGWIG=/media/share/resource/container/pyBigWig/pyBigWig.sif
+# NOTE: containers live under /path/to/containers (NOT under $REF)
+export PY=/path/to/conda/envs/Jupyter/bin/python
+export SIF_BEDTOOLS=/path/to/containers/bedtools/bedtools-2.30.0.sif
+export SIF_MEME=/path/to/containers/meme/meme-5.4.1.sif
+export SIF_PYBIGWIG=/path/to/containers/pyBigWig/pyBigWig.sif
 
 # ---- Analysis parameters ------------------------------------------------------
 export FEAT_UP=500        # promoter window (upstream of TSS) for sequence features
