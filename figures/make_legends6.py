@@ -4,7 +4,7 @@ import csv
 import os
 import re
 
-ROOT = "/media/share/workdir/1610305236/lncProt"
+ROOT = os.environ.get("LNCPROT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MAP = os.path.join(ROOT, "manuscript_package", "figures", "chapters", "mapping.tsv")
 MD = os.path.join(ROOT, ".backup", "SUBMISSION_DRAFT.v6.0.pre-6chapter.md")
 OUT = os.path.join(ROOT, "figure_build", "work", "legends6.md")

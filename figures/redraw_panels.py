@@ -17,7 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-ROOT = "/media/share/workdir/1610305236/lncProt"
+ROOT = os.environ.get("LNCPROT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(ROOT, "figure_build", "work", "panels")
 os.makedirs(OUT, exist_ok=True)
 

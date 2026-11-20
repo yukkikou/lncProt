@@ -13,7 +13,7 @@ import sys
 import matplotlib
 matplotlib.use("Agg")
 
-ROOT = "/media/share/workdir/1610305236/lncProt"
+ROOT = os.environ.get("LNCPROT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 OUT = os.path.join(ROOT, "figure_build", "work", "panels")
 os.makedirs(OUT, exist_ok=True)

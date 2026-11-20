@@ -12,7 +12,7 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = "/media/share/workdir/1610305236/lncProt"
+ROOT = os.environ.get("LNCPROT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = os.path.join(ROOT, "manuscript_package", "figures")
 PAN = os.path.join(ROOT, "figure_build", "work", "panels")
 OUT = os.path.join(SRC, "chapters")

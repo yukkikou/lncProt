@@ -15,7 +15,7 @@ import subprocess
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = "/media/share/workdir/1610305236/lncProt"
+ROOT = os.environ.get("LNCPROT_DIR", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = os.path.join(ROOT, "manuscript_package", "figures")
 OUT = os.path.join(SRC, "assembled")
 TMP = os.path.join(ROOT, "figure_build", "work", "reletter")
