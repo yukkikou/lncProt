@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pylib.progress import step, safe_write_path, df_to_md, WORKDIR
 
 RES = os.path.join(WORKDIR, "results")
+ROOT = WORKDIR
 OUT = os.path.join(RES, "ml")
 TD = os.path.join(WORKDIR, "data", "tissue_disease")
 CLASSES = ["divergent", "antisense", "intronic", "sense_overlapping",
@@ -88,9 +89,12 @@ def task_a(st):
     clf.fit(Xs.iloc[tr], y[tr])
     base = f1_score(y[te], clf.predict(Xs.iloc[te]), average="macro")
     imps = []
+    # Seeded generator so the permutation importances are reproducible across
+    # reruns; the unseeded global RNG made the table drift between sessions.
+    rng = np.random.default_rng(SEED)
     for c in feats:
         Xp = Xs.iloc[te].copy()
-        Xp[c] = np.random.permutation(Xp[c].values)
+        Xp[c] = rng.permutation(Xp[c].values)
         imps.append(dict(feature=c, delta_f1=base - f1_score(
             y[te], clf.predict(Xp), average="macro")))
     imp = pd.DataFrame(imps).sort_values("delta_f1", ascending=False)
@@ -169,6 +173,68 @@ def task_b(st):
         probs[te_] = lr.predict_proba(sc.transform(M[te_]))[:, 1]
     auc = roc_auc_score(y, probs)
     fpr, tpr, _ = roc_curve(y, probs)
+    # --- masked twin: same keep set, same folds; replace annotated LTR bases with N
+    bed = pd.read_csv("/media/share/resource/reference/homo_sapiens/GRCh38/annotation/hg38.nrph.TE.anno.sorted.bed",
+                      sep="\t", header=None,
+                      names=["chrom", "s", "e", "did", "sub", "strand",
+                             "subclass", "cls"],
+                      usecols=[0, 1, 2, 7],
+                      dtype={"chrom": str, "s": np.int64, "e": np.int64,
+                             "sub": str, "cls": str})
+    ltriv = bed[bed.cls == "LTR"]
+    from collections import defaultdict
+    iv = {c: np.sort(g[["s", "e"]].values, axis=0)
+          for c, g in ltriv.groupby("chrom")}
+    meta2 = meta.loc[names]
+    def mask_seq(n, s):
+        g = meta2.loc[n]
+        tss = int(g.tss)
+        if g.strand == "+":
+            gs, ge = tss - 500, tss + 200
+            rev = False
+        else:
+            gs, ge = tss - 200, tss + 500
+            rev = True
+        A = iv.get(g.chrom)
+        mk = np.zeros(ge - gs, dtype=bool)
+        if A is not None:
+            j = np.searchsorted(A[:, 1], gs)
+            k = j
+            while k < len(A) and A[k, 0] < ge:
+                a = max(A[k, 0], gs); b = min(A[k, 1], ge)
+                if b > a:
+                    mk[a - gs:b - gs] = True
+                k += 1
+        sm = mk[::-1] if rev else mk
+        return "".join("N" if sm[i] else ch for i, ch in enumerate(s.upper()))
+    seqs = {}
+    name = None
+    with open(tmp) as fh:
+        for line in fh:
+            if line.startswith(">"):
+                name = line[1:].strip()
+            else:
+                seqs[name] = line.strip()
+    masked = {n: mask_seq(n, s) for n, s in seqs.items()}
+    # rebuild kmer matrix from masked sequences via the same counting function
+    import tempfile
+    tmpf = tempfile.NamedTemporaryFile("w", suffix=".fa", delete=False)
+    for n, s in masked.items():
+        tmpf.write(f">{n}\n{s}\n")
+    tmpf.close()
+    Mm, alpham, namesm = kmer_table(tmpf.name)
+    assert namesm == names
+    probsm = np.zeros(len(y))
+    for tr, te_ in skf.split(Mm, y):
+        Xtr = sc.fit_transform(Mm[tr])
+        lr.fit(Xtr, y[tr])
+        probsm[te_] = lr.predict_proba(sc.transform(Mm[te_]))[:, 1]
+    aucm = roc_auc_score(y, probsm)
+    os.unlink(tmpf.name)
+    pd.DataFrame({"model": ["unmasked", "LTR_masked"],
+                  "auroc": [auc, aucm]}).to_csv(
+        os.path.join(ROOT, "results", "review_p1", "P1_3_kmer_masking.tsv"),
+        sep="\t", index=False)
     # top discriminative 6-mers (fit on all, standardised)
     Xa = sc.fit_transform(M)
     lr.fit(Xa, y)
@@ -176,10 +242,10 @@ def task_b(st):
                        ).sort_values("coef", ascending=False)
     top.to_csv(safe_write_path(os.path.join(OUT, "B_top_kmers.tsv")),
                sep="\t", index=False)
-    st.note(f"B: sequence-only 6-mer AUROC={auc:.3f} (n_pos={int(y.sum())}, "
-            f"n={len(y)}); top words: " +
+    st.note(f"B: sequence-only 6-mer AUROC={auc:.3f} masked={aucm:.3f} "
+            f"(n_pos={int(y.sum())}, n={len(y)}); top words: " +
             ", ".join(top.kmer.head(6)))
-    return dict(fpr=fpr, tpr=tpr, auc=auc, top=top, y=y, probs=probs)
+    return dict(fpr=fpr, tpr=tpr, auc=auc, auc_masked=aucm, top=top, y=y, probs=probs)
 
 
 # ---------------------------------------------------------------- score --- C --
@@ -214,43 +280,82 @@ def task_c(st):
 
 
 # ---------------------------------------------------------------- figure ----
+def panel(ax, letter, y=1.15):
+    """Panel letter above the axes, matching 16_submission_figures.
+
+    Panel a carries a two-line title, so its letter sits higher.
+    """
+    ax.text(-0.02, y, letter, transform=ax.transAxes, fontsize=9,
+            fontweight="bold", va="top", ha="right")
+
+
 def fig10(A, B, C):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    # Match the other submission figures. Arial is absent here, so register the
+    # metric-compatible Liberation Sans instead of falling back to DejaVu.
+    from matplotlib import font_manager as _fm
+    for _p in ("/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
+               "/usr/share/fonts/liberation-sans/LiberationSans-Bold.ttf"):
+        if os.path.exists(_p):
+            _fm.fontManager.addfont(_p)
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "Liberation Sans",
+                            "DejaVu Sans"],
+        "pdf.fonttype": 42, "ps.fonttype": 42,
+        "mathtext.fontset": "custom",
+        "mathtext.rm": "Liberation Sans",
+        "mathtext.it": "Liberation Sans:italic",
+        "mathtext.bf": "Liberation Sans:bold",
+        "mathtext.cal": "Liberation Sans",
+        "mathtext.sf": "Liberation Sans",
+    })
     mpl = plt.rcParams
-    fig, axes = plt.subplots(1, 3, figsize=(183 / 25.4, 62 / 25.4))
+    # Three panels with long y labels need the taller canvas and a wide gutter,
+    # otherwise panel c's axis label runs through panel b.
+    fig, axes = plt.subplots(1, 3, figsize=(180 / 25.4, 66 / 25.4),
+                             gridspec_kw={"wspace": 0.62})
     ax = axes[0]
     cm = A["cm"].astype(float)
     cmn = cm / cm.sum(axis=1, keepdims=True)
     im = ax.imshow(cmn, cmap="Blues", vmin=0, vmax=1)
-    ax.set_xticks(range(5)); ax.set_xticklabels(A["classes"], rotation=40,
+    # display names, so the axis reads the same as in every other figure
+    lab = {"divergent": "Divergent", "antisense": "Antisense",
+           "intronic": "Intronic", "sense_overlapping": "Sense-overlap",
+           "intergenic": "Intergenic"}
+    names = [lab.get(c, c) for c in A["classes"]]
+    ax.set_xticks(range(5)); ax.set_xticklabels(names, rotation=40,
                                                 ha="right", fontsize=6)
-    ax.set_yticks(range(5)); ax.set_yticklabels(A["classes"], fontsize=6)
+    ax.set_yticks(range(5)); ax.set_yticklabels(names, fontsize=6)
     for i in range(5):
         for j in range(5):
             ax.text(j, i, f"{cmn[i, j]:.2f}", ha="center", va="center",
                     fontsize=5.5,
                     color="white" if cmn[i, j] > 0.5 else "black")
-    ax.set_title(f"A  Birth class from promoter features\n"
-                 f"5-fold CV macro-F1 = {A['macro']:.2f}")
+    ax.set_title(f"Birth class from promoter features\n"
+                 f"5-fold CV macro-F1 = {A['macro']:.2f}", fontsize=7, pad=6)
+    panel(ax, "a", y=1.30)
     ax = axes[1]
-    ax.plot(B["fpr"], B["tpr"], color="#D55E00", lw=1.4,
+    ax.plot(B["fpr"], B["tpr"], color="#0072B2", lw=1.4,
             label=f"6-mer logistic, AUROC = {B['auc']:.2f}")
     ax.plot([0, 1], [0, 1], "--", color="#999", lw=0.8)
     ax.set_xlabel("false positive rate"); ax.set_ylabel("true positive rate")
-    ax.set_title("B  LTR-derived promoter from sequence alone")
+    ax.set_title("LTR-derived promoter from sequence", fontsize=7, pad=6)
+    panel(ax, "b")
     ax.legend(fontsize=6)
     ax = axes[2]
     x = np.arange(len(C))
-    cols = ["#C44E52" if c == "tumor" else "#0072B2" for c in C.condition]
+    cols = ["#E69F00" if c == "tumor" else "#0072B2" for c in C.condition]
     ax.bar(x, C.mean_score, yerr=C.sd / np.sqrt(C.n), color=cols,
            capsize=2)
     ax.set_xticks(x)
     ax.set_xticklabels([f"{r.cohort.replace('TCGA-', '')}\n{r.condition}"
                         for r in C.itertuples()], fontsize=6)
-    ax.set_ylabel("LTR-lncRNA score (mean Δ vs other lnc)")
-    ax.set_title("C  Fixed-set LTR score in TCGA glioma")
+    ax.set_ylabel("LTR score (Δ vs other lncRNA)")
+    ax.set_title("Fixed-set LTR score in TCGA glioma", fontsize=7, pad=6)
+    panel(ax, "c")
     fig.tight_layout()
     fig.savefig(os.path.join(WORKDIR, "figures", "sub", "Fig10_ml.pdf"),
                 bbox_inches="tight")

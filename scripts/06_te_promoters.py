@@ -80,9 +80,13 @@ def main():
         ltr_frac = orders.get("LTR", pd.Series(dtype=float))
 
         # TSS inside TE (1bp TSS point): intersect promoter-START point with TEs
-        tsspt = prom.copy()
-        tsspt["p"] = tsspt.apply(lambda r: r["start"] + 1 if r["strand"] == "+"
-                                 else r["end"], axis=1)
+        # The point must be the major TSS itself. The earlier version used the
+        # promoter-window edge (start+1 or end), which sits up to 500 bp away
+        # and gave a TSS-in-TE rate that was not a TSS property.
+        tsspt = prom[["chrom", "gene_id", "strand"]].copy()
+        tsspt["p"] = tsspt.gene_id.map(meta.tss)
+        tsspt = tsspt.dropna(subset=["p"])
+        tsspt["p"] = tsspt.p.astype(int)
         tsspt["s"] = tsspt["p"] - 1
         tsspt[["chrom", "s", "p", "gene_id"]].to_csv(
             safe_write_path(os.path.join(DATA, "tss_points.bed")),

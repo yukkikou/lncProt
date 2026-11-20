@@ -20,6 +20,7 @@ from scipy.stats import fisher_exact
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pylib.progress import step, safe_write_path, WORKDIR, df_to_md
+from pylib.tfnames import norm_tf_symbol
 
 RES = os.path.join(WORKDIR, "results")
 DATA = os.path.join(WORKDIR, "data")
@@ -35,16 +36,6 @@ def bh_fdr(p):
     out = np.empty(n)
     out[o] = np.clip(ranked, 0, 1)
     return out
-
-
-def norm_tf_symbol(motif_id, alt):
-    """Extract TF symbol from HOCOMOCO/JASPAR identifiers."""
-    s = "" if alt is None or (isinstance(alt, float)) else str(alt).strip()
-    if s and not s.startswith("NA"):
-        s = s.split("_")[0]
-        return s
-    mid = "" if motif_id is None else str(motif_id)
-    return mid.split(".")[0]
 
 
 def load_fimo():
