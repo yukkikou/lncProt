@@ -80,7 +80,7 @@ def main():
         ss["sample15"] = ss["Sample ID"].str[:15]
         proj = ss[["sample15", "Project ID"]].drop_duplicates("sample15")
         samp["cancer"] = samp["sample"].str[:15].map(
-            proj.set_index("sample16")["Project ID"]).values
+            proj.set_index("sample15")["Project ID"]).values
 
         # ---- CROSSWALK: volume2 raw BAM uuid -> barcode -> cancer -> stage
         stage = pd.read_csv(os.path.join(TD, "stage_anno.txt"), sep="\t")
